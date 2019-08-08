@@ -1,0 +1,199 @@
+---
+title: 'Revere parcel data'
+output:
+  word_document: default
+  pdf_document: default
+  html_notebook: default
+---
+
+*Group 1 - Tax Assessor Data - City of Revere, MA*
+
+Loading required packages
+```{r warning = FALSE, message = FALSE}
+#For tidying and data visualization:
+library(tidyverse)
+library(scales)
+#For importing and exporting the data set
+library(sf)
+library(foreign)
+```
+
+Importing the data into R
+Data needs to be downloaded from the MassGIS website: 
+https://docs.digital.mass.gov/dataset/massgis-data-standardized-assessors-parcels?_ga=2.97505757.333681628.1549646277-154496739.1511879849
+Following the links to either download the data from a map or a list of links, users should download the shapefile for the City of Revere. Using the 'sf' package, the data table that contains individual parcel records can be read into a data frame in R. There is a second data table that contains a helpful description for the land use code that we will also import and join to the individual parcel records.
+```{r}
+# Read the data from the geodatabase
+RevereParcels <- st_read(dsn = "L3_SHP_M248_Revere/M248Assess.dbf")
+USECODELOOKUP <- st_read(dsn = "L3_SHP_M248_Revere/M248UC_LUT.dbf")
+names(USECODELOOKUP)
+#joining the parcel records to the use code lookup table in order to get use code descriptions 
+RevereParcels <- RevereParcels %>% left_join(select(USECODELOOKUP, -TOWN_ID), by = c("USE_CODE" = "USE_CODE"))
+RevereParcels %>% group_by(USE_DESC) %>% summarise(count = n()) %>% arrange(desc(count))
+```
+
+**New variable addition - Broad use code categories**
+While there is a variable in the data set that signifies use code (USE_CODE), these are very specific (eg, Single-family home, manufacturing, etc.). It would be useful to be able to group these individual land use categories by some broader, conventional uses. The four categories that are commonly used are: residential, commercial, industrial, and exempt (sometimes referred to as RICE). Luckily, the use code field in the data set has some standardization the numeric codes contained in the field. Residential parcels begin with 1, commercial parcels with 3, industrial with 4 exempt with 9, and mixed use properties with 0. We can use these conventions to create a new "General Use" field, which can give us a higher level summary of the mix of parcels across the city of Revere.
+
+```{r fig.height=2.5, fig.width=10}
+#Setting up a new column which will turn use codes into more general categories
+RevereParcels$GeneralUse <- ""
+head(RevereParcels)
+#Creating indicators for residential, commercial, industrial, and exempt uses
+RevereParcels$GeneralUse[grep("^1",RevereParcels$USE_CODE)] <- "Residential"
+RevereParcels$GeneralUse[grep("^3",RevereParcels$USE_CODE)] <- "Commercial"
+RevereParcels$GeneralUse[grep("^4",RevereParcels$USE_CODE)] <- "Industrial"
+RevereParcels$GeneralUse[grep("^9",RevereParcels$USE_CODE)] <- "Exempt"
+RevereParcels$GeneralUse[grep("^0",RevereParcels$USE_CODE)] <- "MixedUse"
+
+#We can view these as a table
+table(RevereParcels$GeneralUse)
+```
+
+**New variable addition - Density measure - units per acre**
+Creating a density field will allow for exploration of the range of densities (and locations of that density) across the city. Lot size is measured in acres, so our density measure will be units per acre.
+```{r}
+#There is sometimes a one-to-many relationship between lots and parcel records. For example, in the case of condo units, each unit has its own parcel record, even though they are on the same lot. 
+#To measure density on the lot level (instead of the parcel level), parcel records must be summarized on the LOC_ID level, with each parcel_id associated with the total of all units from associated parcel_ids and an average lot size (all lot sizes should be the same for each parcel_id on the same loc_id).
+DensityPerParcel <- RevereParcels %>% group_by(LOC_ID) %>% summarise(TotalUnits = sum(UNITS), LotSizeAggregated = mean(LOT_SIZE), DensityPerLoc = TotalUnits/LotSizeAggregated) %>% arrange(desc(TotalUnits))
+#Joining this summary-level data to the parcel data set, but on the LOC_ID level
+RevereParcels <- RevereParcels %>% left_join(select(DensityPerParcel, c(LOC_ID,DensityPerLoc)), by = "LOC_ID")
+View(names(RevereParcels))
+
+```
+
+
+**New variable addition - Absentee owners**
+It would be interesting and potentially useful to know who owns land and property in Revere, and to eventually explore what kinds of property non-local owners tend to own. This chunk creates two fields, one for Massachusetts/non-Massachusetts owners (binary), and one for Revere/non-Revere owners (also binary)
+
+```{r}
+RevereParcels$MA_OWNED <- ifelse(RevereParcels$OWN_STATE == "MA", 1,0)
+RevereParcels$Revere_OWNED <- ifelse(RevereParcels$OWN_CITY %in% c("Revere", "REVERE"), 1, 0)
+```
+
+**Writing the new, edited parcel data back into the original file location**
+```{r}
+write.dbf(RevereParcels, "L3_SHP_M248_Revere/M248Assess.dbf", factor2char = TRUE, max_nchar = 60)
+```
+
+```{r}
+names(RevereParcels)
+
+ggplot(subset(RevereParcels, USE_CODE == "101")) +
+  geom_point(aes(x=RES_AREA, y = TOTAL_VAL),
+             color = "aquamarine4",
+             alpha = 0.25)+
+  theme_minimal()+
+  ggtitle("Total Assessed Value by residential square footage\nSingle-family homes in Revere, MA (tax year 2017)")+
+  xlab("Residential square footage")+
+  ylab("Total assessed value")+
+  scale_x_continuous(labels = scales::comma)+
+  scale_y_continuous(labels = scales::comma)+
+  theme(
+    axis.text.y = element_text(margin = margin(l=15)),
+    axis.text.x = element_text(margin = margin(b=15)),
+    plot.title =  element_text(margin = margin(b=15)),
+    axis.line = element_line(color = "gray60")
+  )
+
+ggsave(filename = "SFHomeValbySF.png", plot = last_plot(), device = "png", height = 4, width = 6, units = "in")
+
+
+ggplot() +
+  geom_density(data = subset(RevereParcels, USE_CODE == '101'),
+    aes(x = TOTAL_VAL, fill = USE_CODE),
+             alpha = 0.5)+
+  geom_density(data = subset(RevereParcels, USE_CODE == '102'),
+    aes(x = TOTAL_VAL, fill = USE_CODE),
+             alpha = 0.5)+
+  scale_fill_manual(values = c("cadetblue3", "orangered2"), labels = c(" single-family", " condo"))+
+  theme_minimal()+
+  ggtitle("Distribution of total assessed values, Revere MA\nSingle-family v condo (tax year 2017)")+
+  xlab("Total assessed value")+
+  scale_x_continuous(labels = scales::comma)+
+  theme(
+    axis.text.y = element_text(margin = margin(l=15)),
+    axis.text.x = element_text(margin = margin(b=15)),
+    plot.title =  element_text(margin = margin(b=15)),
+    axis.line = element_line(color = "gray60"),
+    legend.title = element_blank(),
+    legend.position = c(0.85,0.75),
+    legend.background = element_rect(fill = "white", color = "white")
+  )
+
+
+ggsave(filename = "PriceDistributions.png", plot = last_plot(), device = "png", height = 4, width = 6, units = "in")
+```
+
+
+
+
+
+```{r}
+library(rgdal)
+library(maptools)
+library(plyr)
+library(ggmap)
+library(tmap)
+
+
+RevereSHP <- readOGR(dsn = "L3_SHP_M248_Revere/M248TaxPar.shp")
+RevereSHP2 <- merge(RevereSHP,DensityPerParcel, by = "LOC_ID")
+names(RevereSHP2)
+tm1 <- tm_shape(subset(RevereSHP2, TotalUnits != 0))+
+  tm_fill(col = "TotalUnits", breaks = c(1,2,4,10,50,100,500))+
+  tm_compass(type = "8star", position = c("left","top"), size = 0.75)+
+  tm_scale_bar(size = 0.35, position = c("left","bottom"))+
+  tm_layout(frame = TRUE, 
+            bg.color = "slateblue4",
+            title = "Revere parcels by unit count",
+            legend.outside.position = c("right","bottom"),
+            legend.outside = TRUE
+            )
+
+tmap_save(tm1, "tm1.png", width = 6, height = 5, units = "in")
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
