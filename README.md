@@ -4,6 +4,7 @@ This project provides an overview of the 2017 real estate tax parcel data set fo
 # In this repo
 - Markdown that tidies, aggregates and visualizes the raw tax parcel data from the City of Revere.
 - 2017 data set from MassGIS - this is a file geodatabase
+- Data dictionary that includes all original fields from the MassGIS data set as well as all newly created fields from the RMarkdown file
 
 # Fun Facts
 -	The oldest structure in Revere is a two-unit garden apartment building at 22 School St, shown as built in 1696.
