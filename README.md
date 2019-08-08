@@ -1,6 +1,10 @@
 # Overview
 This project provides an overview of the 2017 real estate tax parcel data set for the City of Revere, compiled and made available through MassGIS. There are 15,109 records in the data set, each associated with an individual parcel. Tax parcels are not the same as land parcels, however, as multiple tax parcels can exist on a single piece of land (a condo building, for example). This data set includes information for 12,780 lots (LOC_IDs). Each parcel record (PROP_ID) includes information on its assessed value, legal use, size, address, physical characteristics, and ownership information. This information can be used to explore the built environment in the City of Revere, including land use patterns, density of development, real estate transactions and valuation.
 
+# In this repo
+- Markdown that tidies, aggregates and visualizes the raw tax parcel data from the City of Revere.
+- 2017 data set from MassGIS - this is a file geodatabase
+
 # Fun Facts
 -	The oldest structure in Revere is a two-unit garden apartment building at 22 School St, shown as built in 1696.
 -	The highest density lot in Revere is located at 360 Revere Beach Boulevard. It is an 81-unit condominium building with a median assessed value of $277,000.
